@@ -171,41 +171,39 @@ class TestBinder(unittest.TestCase):
             received.append(new)
 
         obj.on_trait_change(handler, 'destroyed')
-        obj.on_trait_change(handler, 'destroyed_QObject')
         with self.assertRaises(AttributeError):
             obj.destroyed
-        with self.assertRaises(AttributeError):
-            obj.destroyed_QObject
 
         obj.construct()
         qobj = obj.qobj
         obj.configure()
 
-        # PyQt4 signal instances are not unique.
-        if qt_api == 'pyside':
-            self.assertIs(obj.destroyed, qobj.destroyed)
-        else:
-            # There is no way to check if a PyQt4.QtCore.pyqtBoundSignal is the
-            # same as another, and obtaining it from the QObject gets you
-            # a different object every time.
-            pass
+        self.assertEqual(type(obj.destroyed), type(qobj.destroyed))
 
         # Check delayed signal.
         qobj.destroyed[QtCore.QObject].emit(qobj)
 
-        six.assertCountEqual(self, received, [(), qobj])
+        if qt_api.startswith('pyqt'):
+            # When there are 2 overloads for a signal and one of the is
+            # argumentless, we actually get the single-argument version regardless.
+            # This is actually typically what we want, but I'm noting it because
+            # this behavior did change when we redid the signal implementation to
+            # conform to the limitations of the PyQt5 signal implementation.
+            six.assertCountEqual(self, received, [qobj])
+        elif qt_api.startswith('pyside'):
+            # But PySides don't, and I haven't found a good way to rationalize
+            # the two.
+            six.assertCountEqual(self, received, [()])
 
         # No signal after removal.
         received[:] = []
         obj.on_trait_change(handler, 'destroyed', remove=True)
-        obj.on_trait_change(handler, 'destroyed_QObject', remove=True)
 
         qobj.destroyed[QtCore.QObject].emit(qobj)
         self.assertEqual(received, [])
 
         # No signal after disposal.
         obj.on_trait_change(handler, 'destroyed')
-        obj.on_trait_change(handler, 'destroyed_QObject')
         obj.dispose()
         qobj.destroyed[QtCore.QObject].emit(qobj)
         self.assertEqual(received, [])
